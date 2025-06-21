@@ -4,6 +4,9 @@ const path = require('path');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { initializeApp } = require("firebase/app");
+const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } = require("firebase/auth");
+const admin = require("firebase-admin");
 
 const app = express();
 
@@ -16,6 +19,35 @@ let corsPolicy = cors(corsOptions);
 app.use(parser);
 app.use(corsPolicy);
 app.use(bodyParser.json());
+
+const firebaseConfig = {
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
+  measurementId: "G-DYXE485E7T"
+};
+
+const firebase = initializeApp(firebaseConfig);
+const auth = getAuth(firebase);
+
+admin.initializeApp({
+  credential: admin.credential.cert({
+    type: process.env.FIREBASE_TYPE,
+    project_id: process.env.FIREBASE_PROJECT_ID,
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: process.env.FIREBASE_AUTH_URI,
+    token_uri: process.env.FIREBASE_TOKEN_URI,
+    auth_provider_x509_cert_url: process.env.FIREBASE_AUTH_PROVIDER_X509_CERT_URL,
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_X509_CERT_URL
+  }),
+  databaseURL: `https://${process.env.FIREBASE_PROJECT_ID}.firebaseio.com`
+});
 
 const port = process.env.PORT;
 const uri = process.env.MONGO_URI;
@@ -37,6 +69,125 @@ async function run() {
         console.log(error);
     }
 }
+
+app.post('/RegistrarUsuario', async (req, res) => {
+    try {
+        const {Email, Contrasena } = req.body;
+
+        const responseFirebase = await createUserWithEmailAndPassword(auth, Email, Contrasena);
+        const baseDatos = client.db("ProyectoUX");
+        const coleccion = baseDatos.collection("Usuarios");
+
+        const documento = {
+            Email: Email,
+            firebaseUid: responseFirebase.user.uid,
+        };
+
+        await coleccion.insertOne(documento);
+
+        res.status(201).send({
+            mensaje: "Usuario creado en Firebase y MongoDB",
+            usuario: Email,
+            uid: responseFirebase.user.uid
+        });
+
+    } catch (error) {
+        res.status(500).send({
+            mensaje: "Ocurrió un error al registrar el usuario",
+            error: error.message
+        });
+    }
+});
+
+app.get('/ConseguirUsuario', async (req, res) => {
+    try {
+        const db = client.db("ProyectoUX");
+        const coleccion = db.collection("Usuarios");
+
+        const usuarios = await coleccion.find({}).toArray();
+
+        res.status(200).send({ usuarios });
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
+
+app.put('/ActualizarUsuario/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nuevosDatos = req.body;
+
+    const db = client.db("ProyectoUX");
+    const coleccion = db.collection("Usuarios");
+
+    const usuarioActual = await coleccion.findOne({ _id: new ObjectId(id) });
+    if (!usuarioActual) {
+      return res.status(404).send({ mensaje: "Usuario no encontrado en MongoDB" });
+    }
+
+    const firebaseUid = usuarioActual.firebaseUid;
+
+    const actualizaciones = {};
+    if (nuevosDatos.Email) actualizaciones.email = nuevosDatos.Email;
+    if (nuevosDatos.Contrasena) actualizaciones.password = nuevosDatos.Contrasena;
+
+    if (Object.keys(actualizaciones).length > 0) {
+      await admin.auth().updateUser(firebaseUid, actualizaciones);
+    }
+
+    const resultado = await coleccion.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: nuevosDatos }
+    );
+
+    res.status(200).send({ mensaje: "Usuario actualizado correctamente en MongoDB y Firebase" });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+app.delete('/EliminarUsuario/:id', async (req, res) => {
+    try {
+    const { id } = req.params;
+    const db = client.db("ProyectoUX");
+    const coleccion = db.collection("Usuarios");
+
+    const usuarioActual = await coleccion.findOne({ _id: new ObjectId(id) });
+    if (!usuarioActual) {
+      return res.status(404).send({ mensaje: "Usuario no encontrado" });
+    }
+
+    await admin.auth().deleteUser(usuarioActual.firebaseUid);
+    await coleccion.deleteOne({ _id: new ObjectId(id) });
+
+    res.status(200).send({ mensaje: "Usuario eliminado correctamente de MongoDB y Firebase" });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+
+app.post('/login', async (req, res) => {
+    try {
+        const { Email, Contrasena } = req.body;
+        const response = await signInWithEmailAndPassword(auth, Email, Contrasena);
+        res.status(200).send({
+            mensaje: "Inicio de sesión exitoso",
+            usuario: response.user.email
+        });
+    } catch (error) {
+        res.status(401).send({ error: error.message });
+    }
+});
+
+app.post('/logout', async (req, res) => {
+    try {
+        await signOut(auth);
+        res.status(200).send({ mensaje: "Sesión cerrada correctamente" });
+    } catch (error) {
+        res.status(500).send({ error: error.message });
+    }
+});
 
 app.listen(port, () => {
   console.log(` Servidor corriendo en puerto ${port}`);
