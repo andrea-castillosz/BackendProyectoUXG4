@@ -7,7 +7,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const { initializeApp } = require("firebase/app");
 const { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } = require("firebase/auth");
 const admin = require("firebase-admin");
-
+const axios = require('axios');
 const app = express();
 
 let parser = bodyParser.urlencoded({ extended: true });
@@ -52,6 +52,9 @@ admin.initializeApp({
 const port = process.env.PORT;
 const uri = process.env.MONGO_URI;
 
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -70,6 +73,11 @@ async function run() {
     }
 }
 
+async function connectDB() {
+  return client.db("ProyectoUX");
+}
+
+//registrar un usuario
 app.post('/RegistrarUsuario', async (req, res) => {
     try {
         const {Email, Contrasena } = req.body;
@@ -99,6 +107,7 @@ app.post('/RegistrarUsuario', async (req, res) => {
     }
 });
 
+//obtener los usuarios
 app.get('/ConseguirUsuario', async (req, res) => {
     try {
         const db = client.db("ProyectoUX");
@@ -112,6 +121,7 @@ app.get('/ConseguirUsuario', async (req, res) => {
     }
 });
 
+//actualizar info de un usuario
 app.put('/ActualizarUsuario/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -146,6 +156,7 @@ app.put('/ActualizarUsuario/:id', async (req, res) => {
   }
 });
 
+//eliminar un usuario
 app.delete('/EliminarUsuario/:id', async (req, res) => {
     try {
     const { id } = req.params;
@@ -166,7 +177,7 @@ app.delete('/EliminarUsuario/:id', async (req, res) => {
   }
 });
 
-
+//hacer login
 app.post('/login', async (req, res) => {
     try {
         const { Email, Contrasena } = req.body;
@@ -180,6 +191,7 @@ app.post('/login', async (req, res) => {
     }
 });
 
+//hacer logout
 app.post('/logout', async (req, res) => {
     try {
         await signOut(auth);
@@ -188,6 +200,113 @@ app.post('/logout', async (req, res) => {
         res.status(500).send({ error: error.message });
     }
 });
+
+//obtener peliculas por categoria (now_playing, top_rated, upcoming)
+app.get('/Peliculas/Categoria/:tipo', async (req, res) => {
+  const tipo = req.params.tipo; 
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/movie/${tipo}`, {
+      params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+    });
+    res.send(response.data.results);
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+//buscar por nombre
+app.get('/Peliculas/Buscar/:query', async (req, res) => {
+  const query = req.params.query;
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/search/movie`, {
+      params: { api_key: TMDB_API_KEY, query, language: 'es-ES' }
+    });
+    res.send(response.data.results);
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+//obtener los detalles de las peliculas
+app.get('/Peliculas/:id/detalle', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const [info, videos, imagenes] = await Promise.all([
+      axios.get(`${TMDB_BASE_URL}/movie/${id}`, {
+        params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+      }),
+      axios.get(`${TMDB_BASE_URL}/movie/${id}/videos`, {
+        params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+      }),
+      axios.get(`${TMDB_BASE_URL}/movie/${id}/images`, {
+        params: { api_key: TMDB_API_KEY }
+      })
+    ]);
+
+    res.send({
+      titulo: info.data.title,
+      descripcion: info.data.overview,
+      puntuacion: info.data.vote_average,
+      fecha_estreno: info.data.release_date,
+      duracion: info.data.runtime,
+      generos: info.data.genres,
+      poster: `https://image.tmdb.org/t/p/w500${info.data.poster_path}`,
+      fondo: `https://image.tmdb.org/t/p/w780${info.data.backdrop_path}`,
+      videos: videos.data.results.filter(v => v.type === "Trailer" && v.site === "YouTube"),
+      imagenes: imagenes.data.backdrops.map(img => `https://image.tmdb.org/t/p/w500${img.file_path}`)
+    });
+
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+
+//agregar a favoritos
+app.post('/AddFavoritos/:uid/agregar', async (req, res) => {
+  const { uid } = req.params;
+  const pelicula = req.body;
+  try {
+    const db = await connectDB();
+    await db.collection('Favoritos').updateOne(
+      { uid },
+      { $addToSet: { peliculas: pelicula } },
+      { upsert: true }
+    );
+    res.send({ mensaje: 'Película agregada a favoritos' });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+//obtener los favoritos de un usuario
+app.get('/GetFavoritos/:uid', async (req, res) => {
+  const { uid } = req.params;
+  try {
+    const db = await connectDB();
+    const doc = await db.collection('Favoritos').findOne({ uid });
+    res.send(doc?.peliculas || []);
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+//eliminar una pelicula del favoritos
+app.delete('/DeleteFavoritos/:uid/:peliculaId', async (req, res) => {
+  const { uid, peliculaId } = req.params;
+  try {
+    const db = await connectDB();
+    await db.collection('Favoritos').updateOne(
+      { uid },
+      { $pull: { peliculas: { id: parseInt(peliculaId) } } }
+    );
+    res.send({ mensaje: 'Película eliminada de favoritos' });
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+module.exports = app;
 
 app.listen(port, () => {
   console.log(` Servidor corriendo en puerto ${port}`);
