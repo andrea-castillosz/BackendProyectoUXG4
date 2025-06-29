@@ -184,16 +184,30 @@ app.delete('/EliminarUsuario/:id', async (req, res) => {
 
 //hacer login
 app.post('/login', async (req, res) => {
-    try {
-        const { Email, Contrasena } = req.body;
-        const response = await signInWithEmailAndPassword(auth, Email, Contrasena);
-        res.status(200).send({
-            mensaje: "Inicio de sesión exitoso",
-            usuario: response.user.email
-        });
-    } catch (error) {
-        res.status(401).send({ error: error.message });
+  try {
+    const { Email, Contrasena } = req.body;
+    const response = await signInWithEmailAndPassword(auth, Email, Contrasena);
+
+    const firebaseUid = response.user.uid;
+
+    const db = client.db("ProyectoUX");
+    const coleccion = db.collection("Usuarios");
+
+    const usuario = await coleccion.findOne({ firebaseUid });
+
+    if (!usuario) {
+      return res.status(404).send({ error: "Usuario no encontrado en MongoDB" });
     }
+
+    res.status(200).send({
+      mensaje: "Inicio de sesión exitoso",
+      usuario: response.user.email,
+      mongoId: usuario._id,
+      firebaseUid: usuario.firebaseUid
+    });
+  } catch (error) {
+    res.status(401).send({ error: error.message });
+  }
 });
 
 //hacer logout
