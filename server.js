@@ -249,6 +249,7 @@ app.get('/Peliculas/:id/detalle', async (req, res) => {
     ]);
 
     res.send({
+      id: info.data.id,
       titulo: info.data.title,
       descripcion: info.data.overview,
       puntuacion: info.data.vote_average,
@@ -266,6 +267,28 @@ app.get('/Peliculas/:id/detalle', async (req, res) => {
   }
 });
 
+
+//solo titulo, poster, id y 
+app.get('/Peliculas/:id/resumen', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/movie/${id}`, {
+      params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+    });
+
+    const data = response.data;
+
+    res.send({
+      id: data.id,
+      titulo: data.title,
+      puntuacion: data.vote_average,
+      poster: `https://image.tmdb.org/t/p/w500${data.poster_path}`
+    });
+
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
 
 //agregar a favoritos
 app.post('/AddFavoritos/:uid/agregar', async (req, res) => {
