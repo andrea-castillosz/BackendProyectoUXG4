@@ -64,16 +64,21 @@ const client = new MongoClient(uri, {
 }
 );
 
-async function run() {
-    try {
-        await client.connect();
-        console.log("Conectados a la DB")
-    } catch (error) {
-        console.log(error);
-    }
+async function startServer() {
+  try {
+    await client.connect();
+    console.log("Conectados a la DB");
+
+    app.listen(port, () => {
+      console.log(`Servidor corriendo en puerto ${port}`);
+    });
+  } catch (error) {
+    console.error("Error al conectar a MongoDB:", error);
+    process.exit(1);
+  }
 }
 
-async function connectDB() {
+ function connectDB() {
   return client.db("ProyectoUX");
 }
 
@@ -306,9 +311,9 @@ app.delete('/DeleteFavoritos/:uid/:peliculaId', async (req, res) => {
   }
 });
 
-module.exports = app;
-
-app.listen(port, () => {
-  console.log(` Servidor corriendo en puerto ${port}`);
-  run();
+app.get('/', (req, res) => {
+  res.send('API ProyectoUX funcionando');
 });
+
+startServer();
+module.exports = app;
