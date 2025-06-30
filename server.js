@@ -84,32 +84,34 @@ async function startServer() {
 
 //registrar un usuario
 app.post('/RegistrarUsuario', async (req, res) => {
-    try {
-        const {Email, Contrasena } = req.body;
+  try {
+    const { Email, Contrasena } = req.body;
 
-        const responseFirebase = await createUserWithEmailAndPassword(auth, Email, Contrasena);
-        const baseDatos = client.db("ProyectoUX");
-        const coleccion = baseDatos.collection("Usuarios");
+    const responseFirebase = await createUserWithEmailAndPassword(auth, Email, Contrasena);
+    const baseDatos = client.db("ProyectoUX");
+    const coleccion = baseDatos.collection("Usuarios");
 
-        const documento = {
-            Email: Email,
-            firebaseUid: responseFirebase.user.uid,
-        };
+    const documento = {
+      Email: Email,
+      firebaseUid: responseFirebase.user.uid,
+    };
 
-        await coleccion.insertOne(documento);
+    await coleccion.insertOne(documento);
 
-        res.status(201).send({
-            mensaje: "Usuario creado en Firebase y MongoDB",
-            usuario: Email,
-            uid: responseFirebase.user.uid
-        });
+    res.status(201).json({
+      success: true,
+      mensaje: "Usuario creado en Firebase y MongoDB",
+      usuario: Email,
+      uid: responseFirebase.user.uid,
+    });
 
-    } catch (error) {
-        res.status(500).send({
-            mensaje: "Ocurrió un error al registrar el usuario",
-            error: error.message
-        });
-    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      mensaje: "Ocurrió un error al registrar el usuario",
+      error: error.message,
+    });
+  }
 });
 
 //obtener los usuarios
