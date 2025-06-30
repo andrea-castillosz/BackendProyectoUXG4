@@ -304,6 +304,34 @@ app.get('/Peliculas/:id/resumen', async (req, res) => {
   }
 });
 
+//sinopsis, duracion, rating, trailer
+app.get('/Peliculas/:id/ventanaInfo', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const [info, videos] = await Promise.all([
+      axios.get(`${TMDB_BASE_URL}/movie/${id}`, {
+        params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+      }),
+      axios.get(`${TMDB_BASE_URL}/movie/${id}/videos`, {
+        params: { api_key: TMDB_API_KEY, language: 'es-ES' }
+      })
+    ]);
+
+    const trailer = videos.data.results.find(v => v.type === "Trailer" && v.site === "YouTube");
+
+    res.send({
+      sinopsis: info.data.overview,
+      trailer: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
+      duracion: info.data.runtime,
+      rating: info.data.vote_average
+    });
+
+  } catch (error) {
+    res.status(500).send({ error: error.message });
+  }
+});
+
+
 //agregar a favoritos
 app.post('/AddFavoritos/:uid/agregar', async (req, res) => {
   const { uid } = req.params;
