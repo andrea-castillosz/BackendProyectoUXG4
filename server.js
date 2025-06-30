@@ -320,6 +320,7 @@ app.get('/Peliculas/:id/ventanaInfo', async (req, res) => {
     const trailer = videos.data.results.find(v => v.type === "Trailer" && v.site === "YouTube");
 
     res.send({
+      titulo: info.data.title,
       sinopsis: info.data.overview,
       trailer: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
       duracion: info.data.runtime,
